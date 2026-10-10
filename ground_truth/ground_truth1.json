@@ -1,0 +1,15 @@
+{
+"title": "Half/Marathon Programme",
+"date": "2026-10-09",
+"session_label": "INTERVALS",
+"steps": [
+    {"type": "warmup", "distance_km": 2, "intensity": "easy"},
+    {"type": "repeat", "reps": 4, "steps": [{"type": "stride", "duration_s": 20}]},
+    {"type": "work", "distance_km": 1, "pace_s_per_km": 310},
+    {"type": "work", "distance_km": 1, "pace_s_per_km": 300},
+    {"type": "work", "distance_km": 1, "pace_s_per_km": 290},
+    {"type": "work", "distance_km": 1, "pace_s_per_km": 280},
+    {"type": "work", "distance_km": 1, "pace_s_per_km": 270, "optional": true},
+    {"type": "cooldown", "distance_km": 2, "intensity": "easy"}
+]
+}
