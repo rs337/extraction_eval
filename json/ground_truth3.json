@@ -1,0 +1,8 @@
+{
+    "title": "Half/Marathon Programme",
+    "date": "2026-09-29",
+    "session_label": "10 KM EASY RUN",
+    "steps": [
+        {"type": "work", "distance_km": 10, "intensity": "easy", "pace_s_per_km": null}
+    ]
+    }
