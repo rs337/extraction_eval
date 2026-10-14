@@ -1,0 +1,16 @@
+Extract the workout from this screenshot into JSON.
+
+Context: today is 2026-10-11. The screenshot shows a date like "Fri, October 09". Use the month and day from the screenshot, and pick the year so that the date is not in the future.
+
+Structure rules:
+- "steps" is a flat list. Each line of the workout is ONE step, in order. Never duplicate a step.
+- Step types: warmup, work, rest, stride, cooldown, repeat.
+- Use type "repeat" only for lines like "4x20 second strides" or "2 x (10 min, 5 min)". A repeat MUST have "reps" and a non-empty "steps" list holding ONE repetition. Example: "4x20 second strides" becomes {"type": "repeat", "reps": 4, "steps": [{"type": "stride", "duration_s": 20}]}
+- Only a "repeat" step may have "reps", "steps" or "rest_between_s". Steps of any other type must never contain "steps".
+- A step has distance_km OR duration_s, never both. "2K" is distance_km: 2. "10 mins" is duration_s: 600.
+- "1K @5:10" is distance_km: 1 and pace_s_per_km: 310.
+- "( IF POSSIBLE)" means optional: true.
+- Only set "intensity" if the screenshot states it in words (easy, float, half marathon pace, marathon pace, tempo). Otherwise null.
+- Copy title and session_label exactly as written.
+- Use null for anything not stated. Do not invent steps. Stop after the last line.
+- A repeat's "steps" may only contain simple steps, never another repeat.

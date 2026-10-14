@@ -8,21 +8,22 @@ Unknown keys are rejected (`extra="forbid"`), so a typo such as `distnace_km` fa
 
 | Field           | Type         | Constraints                        | Meaning                                                                                      |
 | --------------- | ------------ | ---------------------------------- | -------------------------------------------------------------------------------------------- |
-| `title`         | string       | required                           | Programme title, e.g. `"Half/Marathon Programme"`.                                           |
-| `date`          | date         | required; ISO `YYYY-MM-DD` in JSON | Session date.                                                                                |
+| `title`         | string       | required                           | Programme title, e.g. `"HALF/MARATHON PROGRAMME"`.                                           |
+| `date`          | date         | required; ISO `YYYY-MM-DD` in JSON | Session date. NOTE year is not included in the image and must be inferred.                   |
 | `session_label` | string       | required                           | Raw header text from the plan, e.g. `"INTERVALS"`, `"10 KM EASY RUN"`. Preserved as written. |
 | `steps`         | list of Step | required                           | Ordered blocks of the session.                                                               |
 
 ## Step
 
 `type` is one of `warmup`, `cooldown`, `work`, `rest`, `stride`, `repeat`.
+`intensity` is one of `easy`, `float`, `half_marathon_pace`, `marathon_pace`, `tempo` or null.
 
 | Field            | Type                 | Constraints                  | Meaning                                                                    |
 | ---------------- | -------------------- | ---------------------------- | -------------------------------------------------------------------------- |
 | `type`           | StepType             | required                     | Kind of block.                                                             |
 | `distance_km`    | float or null        | `> 0` when set               | Distance, when the plan states one.                                        |
 | `duration_s`     | int or null          | `> 0` when set               | Duration in seconds, when the plan states one.                             |
-| `intensity`      | string or null       |                              | Qualitative target, e.g. `"easy"`, `"float"`, `"half_marathon_pace"`.      |
+| `intensity`      | Intensity or null    |                              | Qualitative target, e.g. `"easy"`, `"float"`, `"half_marathon_pace"`.      |
 | `pace_s_per_km`  | int or null          | `150`–`600` when set         | Pace in seconds per kilometre. Null when no number is written on the plan. |
 | `optional`       | bool                 | default `false`              | `true` when the plan marks the step optional, e.g. `"( IF POSSIBLE)"`.     |
 | `note`           | string or null       |                              | Wording that does not fit the other fields.                                |
@@ -37,3 +38,15 @@ Enforced in `Step.check_rules`:
 - A `repeat` must have `reps` and a non-empty `steps` list, and must not set `distance_km` or `duration_s`. Distance and duration belong on the nested steps.
 - Any other type must not set `reps`, `steps`, or `rest_between_s`.
 - A non-repeat step may set `distance_km` or `duration_s`, but not both.
+
+## Annotation rules
+
+- Copy `title` and `session_label` exactly as printed, including capitals. Do not title-case them.
+- The image has a weekday and a month-day, not a year. Store a full `YYYY-MM-DD`. Choose the year so that weekday is correct for the reference date used by this eval, `2026-10-11`.
+- Set `intensity` only when the plan prints one of these words. Map the printed wording to the label:
+  - `easy` → `easy`
+  - `float` → `float`
+  - `half marathon pace`, `HMP` → `half_marathon_pace`
+  - `marathon pace`, `MP` → `marathon_pace`
+  - `tempo` → `tempo`
+- Leave `intensity` null for any other wording. `WARM UP` and `COOL DOWN` choose `type`; they are not an intensity. `2K EASY` is `intensity: "easy"`. `2KM COOL DOWN` has no intensity.
