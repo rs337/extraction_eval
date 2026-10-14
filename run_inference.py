@@ -19,15 +19,15 @@ from schema import Workout
 
 BASE_URL = "http://localhost:11434/v1"   # Ollama's OpenAI-compatible endpoint
 TEMPERATURE = 0
-MAX_TOKENS = 8192
+MAX_TOKENS = 2048
 
 client = OpenAI(base_url=BASE_URL, api_key="none", timeout=300)  # local VLMs can be slow
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--model", default="qwen3-vl:8b")
-    p.add_argument("--prompt", default="extract_v1", help="name of a file in prompts/ (without .txt)")
+    p.add_argument("--model", default="qwen3-vl-8b-instruct-16k")
+    p.add_argument("--prompt", default="extract_v2", help="name of a file in prompts/ (without .txt)")
     p.add_argument("--images", default="screenshots", help="folder containing the screenshots")
     p.add_argument("--repeat", type=int, default=1, help="runs per image, to measure variance")
     return p.parse_args()
@@ -55,6 +55,8 @@ def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str)
         "api_error": None,
         "usage": None,
         "parsed": None,
+        "finish_reason": None,
+        "reasoning": None,
     }
 
     img_b64 = base64.b64encode(image_path.read_bytes()).decode()
@@ -80,6 +82,10 @@ def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str)
     record["latency_s"] = round(time.perf_counter() - t0, 2)
 
     record["raw_output"] = resp.choices[0].message.content
+    msg = resp.choices[0].message
+    record["finish_reason"] = resp.choices[0].finish_reason
+    extra = msg.model_extra or {}
+    record["reasoning"] = extra.get("reasoning") or extra.get("reasoning_content")
     if resp.usage:
         record["usage"] = {"prompt_tokens": resp.usage.prompt_tokens,
                            "completion_tokens": resp.usage.completion_tokens}
@@ -133,7 +139,7 @@ def main() -> None:
             out_path.write_text(json.dumps(record, indent=2))
             results.append(record)
 
-            status = "valid" if record["valid"] else ("API ERROR" if record["api_error"] else "INVALID")
+            status = "valid" if record["valid"] else ("API ERROR" if record["api_error"] else f"INVALID ({record['finish_reason']})")
             print(f"{image_path.name:<14} r{r}  {status:<9} {record['latency_s']}s")
 
     summary = write_summary(run_dir, run_id, args.model, args.prompt, results)
