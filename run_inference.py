@@ -1,13 +1,18 @@
-"""Run: uv run python run_inference.py [--model qwen3-vl:8b] [--prompt extract_v1] [--repeat 1]
+"""Run: uv run python run_inference.py [--model NAME] [--prompt extract_v2] [--repeat 1] [--temperature 0]
 
 Runs the extractor on every screenshot and saves one JSON per image under runs/<run_id>/.
 Evaluation (score.py, judge.py) later reads these saved files, never the live model.
+
+Note: at temperature 0 every repeat gives the same output, so use --repeat together with
+--temperature > 0 (e.g. 0.5) if you want to measure variance.
 """
 import argparse
 import base64
+import hashlib
 import json
 import re
 import statistics
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +23,6 @@ from pydantic import ValidationError
 from schema import Workout
 
 BASE_URL = "http://localhost:11434/v1"   # Ollama's OpenAI-compatible endpoint
-TEMPERATURE = 0
 MAX_TOKENS = 2048
 
 client = OpenAI(base_url=BASE_URL, api_key="none", timeout=300)  # local VLMs can be slow
@@ -30,7 +34,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--prompt", default="extract_v2", help="name of a file in prompts/ (without .txt)")
     p.add_argument("--images", default="screenshots", help="folder containing the screenshots")
     p.add_argument("--repeat", type=int, default=1, help="runs per image, to measure variance")
+    p.add_argument("--temperature", type=float, default=0.0,
+                   help="sampling temperature; repeats only differ when this is > 0")
     return p.parse_args()
+
+
+def git_commit() -> str | None:
+    """Short hash of the current commit, with '-dirty' if there are uncommitted changes."""
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", ".", ":!runs"],
+                               capture_output=True, text=True, check=True).stdout.strip()
+        return sha + ("-dirty" if dirty else "")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 def make_run_dir(model: str) -> tuple[str, Path]:
     safe_model = re.sub(r"[^A-Za-z0-9._-]", "-", model)       # "qwen3-vl:8b" -> "qwen3-vl-8b"
@@ -39,13 +57,17 @@ def make_run_dir(model: str) -> tuple[str, Path]:
     run_dir.mkdir(parents=True)
     return run_id, run_dir
 
-def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str) -> dict:
+def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str,
+            prompt_sha: str, commit: str | None, temperature: float, seed: int) -> dict:
     """Call the model on one image and return a result record. Never raises."""
     record = {
         "image": image_path.name,
         "model": model,
         "prompt_version": prompt_version,
-        "temperature": TEMPERATURE,
+        "prompt_sha256": prompt_sha,
+        "git_commit": commit,
+        "temperature": temperature,
+        "seed": seed,
         "max_tokens": MAX_TOKENS,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "latency_s": None,
@@ -72,7 +94,8 @@ def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str)
             ]}],
             response_format={"type": "json_schema",
                              "json_schema": {"name": "workout", "schema": Workout.model_json_schema()}},
-            temperature=TEMPERATURE,
+            temperature=temperature,
+            seed=seed,   # Ollama otherwise reuses one fixed seed, making every repeat identical
             max_tokens=MAX_TOKENS,
         )
     except Exception as e:
@@ -100,13 +123,17 @@ def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str)
 
     return record
 
-def write_summary(run_dir: Path, run_id: str, model: str, prompt_version: str, results: list[dict]) -> dict:
+def write_summary(run_dir: Path, run_id: str, model: str, prompt_version: str, results: list[dict],
+                  temperature: float = 0.0) -> dict:
     latencies = [r["latency_s"] for r in results if r["latency_s"] is not None]
     n_valid = sum(r["valid"] for r in results)
     summary = {
         "run_id": run_id,
         "model": model,
         "prompt_version": prompt_version,
+        "prompt_sha256": results[0]["prompt_sha256"] if results else None,
+        "git_commit": results[0]["git_commit"] if results else None,
+        "temperature": temperature,
         "n_outputs": len(results),
         "n_valid": n_valid,
         "validity_rate": round(n_valid / len(results), 3) if results else None,
@@ -125,13 +152,18 @@ def main() -> None:
     if not images:
         raise SystemExit(f"No .png files found in {args.images}/")
 
+    prompt_sha = hashlib.sha256(prompt_text.encode()).hexdigest()[:12]
+    commit = git_commit()
+
     run_id, run_dir = make_run_dir(args.model)
-    print(f"Run {run_id}: {len(images)} images x {args.repeat} repeat(s), prompt={args.prompt}\n")
+    print(f"Run {run_id}: {len(images)} images x {args.repeat} repeat(s), "
+          f"prompt={args.prompt} ({prompt_sha}), temperature={args.temperature}, commit={commit}\n")
 
     results = []
     for image_path in images:
         for r in range(1, args.repeat + 1):
-            record = extract(image_path, args.model, prompt_text, args.prompt)
+            record = extract(image_path, args.model, prompt_text, args.prompt,
+                             prompt_sha, commit, args.temperature, seed=r)
             record["repeat"] = r
 
             suffix = f"_r{r}" if args.repeat > 1 else ""
@@ -142,7 +174,7 @@ def main() -> None:
             status = "valid" if record["valid"] else ("API ERROR" if record["api_error"] else f"INVALID ({record['finish_reason']})")
             print(f"{image_path.name:<14} r{r}  {status:<9} {record['latency_s']}s")
 
-    summary = write_summary(run_dir, run_id, args.model, args.prompt, results)
+    summary = write_summary(run_dir, run_id, args.model, args.prompt, results, args.temperature)
     print(f"\nValid: {summary['n_valid']}/{summary['n_outputs']}  "
           f"mean latency: {summary['latency_mean_s']}s  -> {run_dir}/")
 
