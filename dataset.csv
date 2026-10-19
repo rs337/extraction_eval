@@ -1,0 +1,10 @@
+id,split,reference_date,source,tags,notes
+image_1,dev,2026-10-11,coach_app,warmup_plus_strides;pace_progression;optional;style_line,
+image_2,dev,2026-10-11,coach_app,nested_repeat;intensity_words;lowercase_label;rest_step;float_step,x2 follows the lines it repeats
+image_3,dev,2026-10-11,coach_app,empty_body,
+image_4,dev,2026-10-11,coach_app,rest_with_strides;rest_between;summary_line;style_line,
+image_5,dev,2026-10-17,coach_app,intensity_words;pace_and_intensity;unlabelled_warmup_cooldown;lowercase_label;filler_line;style_line,"as per request" is not a step
+image_6,test,2026-10-27,coach_app,summary_line;pace_progression;dash_prefix,"leading - on the fast lines is formatting only; 5:30 blocks are work with pace"
+image_7,test,2026-10-17,coach_app,intensity_words;unlabelled_warmup_cooldown;distance_label,"31km label is not a step because the body is present; middle 1km easy stays work"
+image_8,test,2026-10-17,coach_app,pace_range;float_step;summary_line;style_line;unlabelled_warmup_cooldown,"x3 applies to the 3K and 1K lines above it; label has a typo (VLOUME) in the summary line"
+image_9,test,2026-10-17,coach_app,unlabelled_warmup_cooldown;lowercase_label;rest_between;rest_step;metres;unnamed_strides;unit_less_rest,"rest 2 is minutes, rest 90 is seconds; rest 90 after 5x1k is between reps because a separate 3 min rest follows the last rep"

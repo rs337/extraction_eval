@@ -1,0 +1,12 @@
+{
+"title": "HALF/MARATHON PROGRAMME",
+"date": "2026-09-27",
+"session_label": "31km",
+"steps": [
+    {"type": "warmup", "distance_km": 10, "intensity": "easy"},
+    {"type": "work", "distance_km": 5, "intensity": "marathon_pace"},
+    {"type": "work", "distance_km": 1, "intensity": "easy"},
+    {"type": "work", "distance_km": 5, "intensity": "marathon_pace"},
+    {"type": "cooldown", "distance_km": 10, "intensity": "easy"}
+]
+}

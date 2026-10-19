@@ -1,0 +1,10 @@
+{
+    "title": "HALF/MARATHON PROGRAMME",
+    "date": "2026-10-16",
+    "session_label": "tempo",
+    "steps": [
+        {"type": "warmup", "distance_km": 2, "intensity": "easy"},
+        {"type": "work", "distance_km": 6, "pace_s_per_km": 285, "intensity": "steady"},
+        {"type": "cooldown", "distance_km": 2, "intensity": "easy"}
+    ]
+    }

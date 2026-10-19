@@ -1,0 +1,20 @@
+{
+"title": "HALF/MARATHON PROGRAMME",
+"date": "2026-09-10",
+"session_label": "intervals",
+"steps": [
+    {"type": "warmup", "duration_s": 600, "intensity": "easy"},
+    {"type": "repeat", "reps": 4, "steps": [{"type": "stride", "duration_s": 20}]},
+    {"type": "rest", "duration_s": 120},
+    {
+    "type": "repeat", "reps": 5, "rest_between_s": 90,
+    "steps": [{"type": "work", "distance_km": 1, "pace_s_per_km": 230}]
+    },
+    {"type": "rest", "duration_s": 180},
+    {
+    "type": "repeat", "reps": 4, "rest_between_s": 60,
+    "steps": [{"type": "work", "distance_km": 0.2, "pace_s_per_km": 210}]
+    },
+    {"type": "cooldown", "duration_s": 600}
+]
+}

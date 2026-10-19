@@ -1,0 +1,14 @@
+{
+"title": "HALF/MARATHON PROGRAMME",
+"date": "2026-09-19",
+"session_label": "LONG RUN",
+"steps": [
+    {"type": "warmup", "distance_km": 5},
+    {"type": "work", "distance_km": 5, "pace_s_per_km": 295},
+    {"type": "work", "distance_km": 5, "pace_s_per_km": 330},
+    {"type": "work", "distance_km": 4, "pace_s_per_km": 290},
+    {"type": "work", "distance_km": 5, "pace_s_per_km": 330},
+    {"type": "work", "distance_km": 3, "pace_s_per_km": 280},
+    {"type": "cooldown", "distance_km": 2, "intensity": "easy"}
+]
+}

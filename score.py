@@ -1,6 +1,7 @@
-"""Run: uv run python score.py [RUN_DIR ...] [--all]
+"""Run: uv run python score.py [RUN_DIR ...] [--all] [--split dev|test|all]
 
 Scores saved runs against ground_truth/. With no argument, scores the newest run.
+--split limits scoring to the examples of that split in dataset.csv (default: all, i.e. whatever the run contains).
 Writes runs/<run_id>/scores.json and prints a report per run.
 
 Metric layers, coarse to fine (see SCHEMA.md "Scoring conventions"):
@@ -17,20 +18,21 @@ from statistics import mean
 
 from pydantic import ValidationError
 
+from dataset import load_manifest
 from schema import Leaf, Repeat, Workout
 
-GT_DIR = Path("ground_truth")
 RUNS_DIR = Path("runs")
 TOP_FIELDS = ["title", "date", "session_label"]
-LEAF_FIELDS = ["distance_km", "duration_s", "intensity", "pace_s_per_km", "optional"]
+LEAF_FIELDS = ["distance_km", "duration_s", "intensity", "pace_s_per_km",
+               "pace_min_s_per_km", "pace_max_s_per_km", "optional"]
 REPEAT_FIELDS = ["reps", "rest_between_s", "optional"]
 KM_TOL = 0.01
 
 # ---------- loading ----------
 
-def load_ground_truth() -> dict[str, Workout]:
-    """{'image_1': Workout, ...} keyed by file stem, so it matches screenshots/image_1.png."""
-    return {p.stem: Workout.model_validate_json(p.read_text()) for p in sorted(GT_DIR.glob("*.json"))}
+def load_ground_truth(split: str = "all") -> dict[str, Workout]:
+    """{'image_1': Workout, ...} for the examples of a split, keyed by id (the shared file stem)."""
+    return {e.id: Workout.model_validate_json(e.ground_truth.read_text()) for e in load_manifest(split)}
 
 
 def load_records(run_dir: Path) -> list[dict]:
@@ -150,6 +152,7 @@ def totals(steps: list) -> dict:
         "moving_time_s": sum(s.duration_s or 0 for s in segs if s.type != "rest"),
         "rest_time_s": sum(s.duration_s or 0 for s in segs if s.type == "rest"),
         "paces": [s.pace_s_per_km for s in segs if s.pace_s_per_km is not None],
+        "pace_ranges": [[s.pace_min_s_per_km, s.pace_max_s_per_km] for s in segs if s.pace_min_s_per_km is not None],
     }
 
 # ---------- one output ----------
@@ -204,15 +207,18 @@ def summarise(results: list[dict]) -> dict:
 
 # ---------- run level ----------
 
-def score_run(run_dir: Path, gt: dict[str, Workout]) -> dict | None:
+def score_run(run_dir: Path, gt: dict[str, Workout], split: str = "all") -> dict | None:
+    in_manifest = {e.id for e in load_manifest()}
     results = []
     for record in load_records(run_dir):
         image = Path(record["image"]).stem
         if image not in gt:
-            print(f"  skip {record['image']}: no ground_truth/{image}.json")
+            if image not in in_manifest:
+                print(f"  skip {record['image']}: not in dataset.csv")
             continue
         results.append(score_output(record, gt[image]))
     if not results:
+        print(f"\n=== {run_dir.name}: no outputs for split={split}")
         return None
 
     by_image = defaultdict(list)
@@ -221,6 +227,7 @@ def score_run(run_dir: Path, gt: dict[str, Workout]) -> dict | None:
 
     scores = {
         "run_id": run_dir.name,
+        "split": split,
         "overall": summarise(results),
         "per_image": {img: summarise(rs) for img, rs in sorted(by_image.items())},
         "outputs": results,
@@ -232,7 +239,7 @@ def score_run(run_dir: Path, gt: dict[str, Workout]) -> dict | None:
 def print_report(scores: dict) -> None:
     s = scores["overall"]
     st = s["steps"]
-    print(f"\n=== {scores['run_id']}  ({s['n_outputs']} outputs)")
+    print(f"\n=== {scores['run_id']}  (split={scores['split']}, {s['n_outputs']} outputs)")
     print(f"validity        {s['validity_rate']:.2f}")
     print("top-level       " + "  ".join(f"{f}={v:.2f}" for f, v in s["top_level"].items()))
     print(f"steps           P={st['precision']:.2f}  R={st['recall']:.2f}  F1={st['f1']:.2f}  "
@@ -255,15 +262,17 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("run_dirs", nargs="*", type=Path, help="runs/<run_id> folders (default: newest run)")
     p.add_argument("--all", action="store_true", help="score every run in runs/")
+    p.add_argument("--split", default="all", choices=["dev", "test", "all"],
+                   help="only score examples of this split in dataset.csv")
     args = p.parse_args()
 
     all_runs = sorted(d for d in RUNS_DIR.iterdir() if d.is_dir())
     run_dirs = all_runs if args.all else (args.run_dirs or all_runs[-1:])
 
-    gt = load_ground_truth()
+    gt = load_ground_truth(args.split)
     all_scores = []
     for run_dir in run_dirs:
-        scores = score_run(run_dir, gt)
+        scores = score_run(run_dir, gt, args.split)
         if scores:
             print_report(scores)
             all_scores.append(scores)

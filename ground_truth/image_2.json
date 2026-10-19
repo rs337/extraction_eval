@@ -10,7 +10,7 @@
     "type": "repeat", "reps": 2,
     "steps": [
         {"type": "work", "duration_s": 600, "intensity": "half_marathon_pace"},
-        {"type": "work", "duration_s": 300, "intensity": "float"}
+        {"type": "float", "duration_s": 300}
     ]
     },
     {"type": "cooldown", "distance_km": 2, "intensity": "easy"}

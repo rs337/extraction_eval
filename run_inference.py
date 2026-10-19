@@ -1,7 +1,10 @@
-"""Run: uv run python run_inference.py [--model NAME] [--prompt extract_v2] [--repeat 1] [--temperature 0]
+"""Run: uv run python run_inference.py [--split dev] [--model NAME] [--prompt extract_v3] [--repeat 1] [--temperature 0]
 
-Runs the extractor on every screenshot and saves one JSON per image under runs/<run_id>/.
+Runs the extractor on every example of a split in dataset.csv and saves one JSON per image under runs/<run_id>/.
 Evaluation (score.py, judge.py) later reads these saved files, never the live model.
+
+A prompt may contain the placeholder {reference_date}; it is filled with that example's reference date
+from dataset.csv. prompt_sha256 is the hash of the template, so it identifies the prompt version.
 
 Note: at temperature 0 every repeat gives the same output, so use --repeat together with
 --temperature > 0 (e.g. 0.5) if you want to measure variance.
@@ -20,6 +23,7 @@ from pathlib import Path
 from openai import OpenAI
 from pydantic import ValidationError
 
+from dataset import Example, load_manifest
 from schema import Workout
 
 BASE_URL = "http://localhost:11434/v1"   # Ollama's OpenAI-compatible endpoint
@@ -31,8 +35,9 @@ client = OpenAI(base_url=BASE_URL, api_key="none", timeout=300)  # local VLMs ca
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="qwen3-vl-8b-instruct-16k")
-    p.add_argument("--prompt", default="extract_v2", help="name of a file in prompts/ (without .txt)")
-    p.add_argument("--images", default="screenshots", help="folder containing the screenshots")
+    p.add_argument("--prompt", default="extract_v3", help="name of a file in prompts/ (without .txt)")
+    p.add_argument("--split", default="dev", choices=["dev", "test", "all"],
+                   help="which examples of dataset.csv to run; keep test held out while tuning prompts")
     p.add_argument("--repeat", type=int, default=1, help="runs per image, to measure variance")
     p.add_argument("--temperature", type=float, default=0.0,
                    help="sampling temperature; repeats only differ when this is > 0")
@@ -57,11 +62,15 @@ def make_run_dir(model: str) -> tuple[str, Path]:
     run_dir.mkdir(parents=True)
     return run_id, run_dir
 
-def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str,
+def extract(example: Example, model: str, prompt_template: str, prompt_version: str,
             prompt_sha: str, commit: str | None, temperature: float, seed: int) -> dict:
     """Call the model on one image and return a result record. Never raises."""
+    image_path = example.screenshot
+    prompt_text = prompt_template.replace("{reference_date}", example.reference_date.isoformat())
     record = {
         "image": image_path.name,
+        "split": example.split,
+        "reference_date": example.reference_date.isoformat(),
         "model": model,
         "prompt_version": prompt_version,
         "prompt_sha256": prompt_sha,
@@ -124,11 +133,12 @@ def extract(image_path: Path, model: str, prompt_text: str, prompt_version: str,
     return record
 
 def write_summary(run_dir: Path, run_id: str, model: str, prompt_version: str, results: list[dict],
-                  temperature: float = 0.0) -> dict:
+                  temperature: float = 0.0, split: str = "all") -> dict:
     latencies = [r["latency_s"] for r in results if r["latency_s"] is not None]
     n_valid = sum(r["valid"] for r in results)
     summary = {
         "run_id": run_id,
+        "split": split,
         "model": model,
         "prompt_version": prompt_version,
         "prompt_sha256": results[0]["prompt_sha256"] if results else None,
@@ -147,34 +157,37 @@ def write_summary(run_dir: Path, run_id: str, model: str, prompt_version: str, r
 def main() -> None:
     args = parse_args()
 
-    prompt_text = Path(f"prompts/{args.prompt}.txt").read_text().strip()
-    images = sorted(Path(args.images).glob("*.png"))
-    if not images:
-        raise SystemExit(f"No .png files found in {args.images}/")
+    prompt_template = Path(f"prompts/{args.prompt}.txt").read_text().strip()
+    examples = load_manifest(args.split)
+    if not examples:
+        raise SystemExit(f"No examples with split={args.split} in dataset.csv")
+    missing = [str(e.screenshot) for e in examples if not e.screenshot.exists()]
+    if missing:
+        raise SystemExit(f"Missing screenshots (run validate_ground_truth.py): {', '.join(missing)}")
 
-    prompt_sha = hashlib.sha256(prompt_text.encode()).hexdigest()[:12]
+    prompt_sha = hashlib.sha256(prompt_template.encode()).hexdigest()[:12]
     commit = git_commit()
 
     run_id, run_dir = make_run_dir(args.model)
-    print(f"Run {run_id}: {len(images)} images x {args.repeat} repeat(s), "
+    print(f"Run {run_id}: split={args.split}, {len(examples)} images x {args.repeat} repeat(s), "
           f"prompt={args.prompt} ({prompt_sha}), temperature={args.temperature}, commit={commit}\n")
 
     results = []
-    for image_path in images:
+    for example in examples:
         for r in range(1, args.repeat + 1):
-            record = extract(image_path, args.model, prompt_text, args.prompt,
+            record = extract(example, args.model, prompt_template, args.prompt,
                              prompt_sha, commit, args.temperature, seed=r)
             record["repeat"] = r
 
             suffix = f"_r{r}" if args.repeat > 1 else ""
-            out_path = run_dir / f"{image_path.stem}{suffix}.json"
+            out_path = run_dir / f"{example.id}{suffix}.json"
             out_path.write_text(json.dumps(record, indent=2))
             results.append(record)
 
             status = "valid" if record["valid"] else ("API ERROR" if record["api_error"] else f"INVALID ({record['finish_reason']})")
-            print(f"{image_path.name:<14} r{r}  {status:<9} {record['latency_s']}s")
+            print(f"{record['image']:<14} r{r}  {status:<9} {record['latency_s']}s")
 
-    summary = write_summary(run_dir, run_id, args.model, args.prompt, results, args.temperature)
+    summary = write_summary(run_dir, run_id, args.model, args.prompt, results, args.temperature, args.split)
     print(f"\nValid: {summary['n_valid']}/{summary['n_outputs']}  "
           f"mean latency: {summary['latency_mean_s']}s  -> {run_dir}/")
 

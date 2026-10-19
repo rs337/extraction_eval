@@ -9,9 +9,9 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Intensity = Literal["easy", "float", "half_marathon_pace", "marathon_pace", "tempo"]
+Intensity = Literal["easy", "half_marathon_pace", "marathon_pace", "tempo", "steady"]
 
-LeafType = Literal["warmup", "cooldown", "work", "rest", "stride"]
+LeafType = Literal["warmup", "cooldown", "work", "rest", "stride", "float"]
 class Leaf(BaseModel):
     """A single step: no nesting, no reps."""
     model_config = ConfigDict(extra="forbid")
@@ -20,12 +20,21 @@ class Leaf(BaseModel):
     duration_s: Optional[int] = Field(None, gt=0)
     intensity: Optional[Intensity] = None
     pace_s_per_km: Optional[int] = Field(None, ge=150, le=600)
+    pace_min_s_per_km: Optional[int] = Field(None, ge=150, le=600)
+    pace_max_s_per_km: Optional[int] = Field(None, ge=150, le=600)
     optional: bool = False
     note: Optional[str] = None
     @model_validator(mode="after")
     def check_rules(self) -> "Leaf":
         if self.distance_km is not None and self.duration_s is not None:
             raise ValueError("a step has distance or duration, not both")
+        if (self.pace_min_s_per_km is None) != (self.pace_max_s_per_km is None):
+            raise ValueError("pace_min_s_per_km and pace_max_s_per_km are set together")
+        if self.pace_min_s_per_km is not None:
+            if self.pace_s_per_km is not None:
+                raise ValueError("a step has a single pace or a pace range, not both")
+            if self.pace_min_s_per_km > self.pace_max_s_per_km:
+                raise ValueError("pace_min_s_per_km must not be greater than pace_max_s_per_km")
         return self
 class Repeat(BaseModel):
     """A group repeated `reps` times. It can only contain Leaf steps."""
